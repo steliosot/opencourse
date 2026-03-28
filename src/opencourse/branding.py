@@ -27,5 +27,4 @@ def banner_panel() -> Panel:
     title = Text("OpenCourse", style="bold bright_cyan")
     subtitle = Text("Terminal-First University Learning", style="cyan")
     body = Text(LOGO, style="bold bright_cyan")
-    body.append(ARISTOTLE_ICON, style="bright_magenta")
     return Panel(body, title=title, subtitle=subtitle, border_style="cyan", padding=(1, 2))

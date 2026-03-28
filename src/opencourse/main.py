@@ -21,7 +21,7 @@ app = typer.Typer(help="OpenCourse CLI", add_completion=False, rich_markup_mode=
 skills_app = typer.Typer(help="Skill management commands")
 ai_app = typer.Typer(help="AI management commands")
 module_app = typer.Typer(help="Module management commands")
-set_app = typer.Typer(help="Setters for OpenCourse session defaults")
+set_app = typer.Typer(help="Setters for OpenCourse session defaults", invoke_without_command=True)
 app.add_typer(skills_app, name="skills")
 app.add_typer(ai_app, name="ai")
 app.add_typer(module_app, name="module")
@@ -321,9 +321,19 @@ def module_current() -> None:
     )
 
 
-@set_app.command("module")
-def set_module_alias(module_id: str) -> None:
-    _set_module(module_id)
+@set_app.callback()
+def set_callback(
+    module_or_id: str | None = typer.Argument(default=None),
+    module_id: str | None = typer.Argument(default=None),
+) -> None:
+    if module_or_id and module_or_id != "module":
+        _set_module(module_or_id)
+        return
+    if module_or_id == "module" and module_id:
+        _set_module(module_id)
+        return
+    console.print("[red]Usage:[/red] opencourse set <module-id> or opencourse set module <module-id>")
+    raise typer.Exit(code=2)
 
 
 @skills_app.command("list")
