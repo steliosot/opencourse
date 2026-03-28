@@ -11,6 +11,7 @@ from rich.table import Table
 from .ai.manager import AIManager, DEFAULT_MODEL, FALLBACK_MODEL, OPTIONAL_MODEL
 from .branding import banner_panel
 from .coursepacks import CoursePackLoader, validate_coursepack
+from .module_registry import ModuleRegistry, validate_module_repo
 from .models import CoursePack, Skill
 from .progress import ProgressStore
 from .runtimes import RuntimeEngine
@@ -21,10 +22,12 @@ app = typer.Typer(help="OpenCourse CLI", add_completion=False, rich_markup_mode=
 skills_app = typer.Typer(help="Skill management commands")
 ai_app = typer.Typer(help="AI management commands")
 module_app = typer.Typer(help="Module management commands")
+session_app = typer.Typer(help="Session management commands")
 set_app = typer.Typer(help="Setters for OpenCourse session defaults", invoke_without_command=True)
 app.add_typer(skills_app, name="skills")
 app.add_typer(ai_app, name="ai")
 app.add_typer(module_app, name="module")
+app.add_typer(session_app, name="session")
 app.add_typer(set_app, name="set")
 
 
@@ -32,9 +35,14 @@ class AppContext:
     def __init__(self, workspace: Path) -> None:
         self.workspace = workspace
         self.coursepacks = CoursePackLoader(workspace)
+        self.registry = ModuleRegistry()
         self.progress_store = ProgressStore(workspace)
         self.ai_manager = AIManager()
-        self.engine = RuntimeEngine(console, ai_provider=self.ai_manager.get_provider())
+        self.engine = RuntimeEngine(
+            console,
+            ai_provider=self.ai_manager.get_provider(),
+            workspace_root=workspace,
+        )
 
     def get_pack(self, module_id: str = "big-data-processing") -> CoursePack:
         packs = self.coursepacks.discover()
@@ -48,6 +56,34 @@ class AppContext:
     def get_skills(self, pack: CoursePack) -> dict[str, Skill]:
         loader = SkillLoader(self.workspace)
         return loader.load_skills(include_coursepack=pack.path)
+
+
+def _command_for_skill(skill: Skill) -> str:
+    skill_type = skill.metadata.skill_type
+    name = skill.metadata.name
+    if skill_type == "quiz":
+        return f"opencourse quiz {name}"
+    if skill_type == "guided-lab":
+        return f"opencourse lab {name}"
+    if skill_type == "python-test":
+        return f"opencourse test {name}"
+    if skill_type == "explain-error":
+        return f"opencourse explain-error {name}"
+    return f"opencourse run {name}"
+
+
+def _skills_for_current_slot(week_skills: list[str], skills: dict[str, Skill], current_session: int) -> list[str]:
+    filtered = []
+    for skill_name in week_skills:
+        skill = skills.get(skill_name)
+        if not skill:
+            continue
+        session = skill.metadata.session or 1
+        if session == current_session:
+            filtered.append(skill_name)
+    if filtered:
+        return filtered
+    return [name for name in week_skills if name in skills]
 
 
 @app.callback(invoke_without_command=True)
@@ -64,6 +100,7 @@ def root(ctx: typer.Context) -> None:
     if progress.module_id not in packs:
         progress.module_id = sorted(packs.keys())[0]
         progress.current_week = 1
+        progress.current_session = 1
         progress.last_skill = None
         progress.completed_skills = {}
         state.progress_store.save(progress)
@@ -87,7 +124,9 @@ def root(ctx: typer.Context) -> None:
         Panel(
             f"Current module: [cyan]{pack.title}[/cyan]\n"
             f"Current week: [bold]{progress.current_week}[/bold]\n"
+            f"Current session: [bold]{progress.current_session}[/bold]\n"
             "Use [bold]opencourse set module <id>[/bold] to switch modules.\n"
+            "Use [bold]opencourse set week <n>[/bold] and [bold]opencourse set session <n>[/bold] to switch slots.\n"
             "Use [bold]opencourse learn[/bold] to continue.",
             border_style="cyan",
             title="Session",
@@ -107,17 +146,26 @@ def learn() -> None:
     if week is None:
         raise typer.Exit(code=1)
 
-    table = Table(title=f"Week {week.week}: {week.title}", border_style="cyan")
+    table = Table(title=f"Week {week.week} Session {progress.current_session}: {week.title}", border_style="cyan")
     table.add_column("Skill")
     table.add_column("Type")
+    table.add_column("Session")
+    table.add_column("Command", no_wrap=True)
     table.add_column("Status")
 
-    for skill_name in week.skills:
+    current_slot_skills = _skills_for_current_slot(week.skills, skills, progress.current_session)
+    for skill_name in current_slot_skills:
         skill = skills.get(skill_name)
         if skill is None:
             continue
         status = "done" if skill_name in progress.completed_skills else "pending"
-        table.add_row(skill_name, skill.metadata.skill_type, status)
+        table.add_row(
+            skill_name,
+            skill.metadata.skill_type,
+            str(skill.metadata.session or 1),
+            _command_for_skill(skill),
+            status,
+        )
 
     console.print(table)
 
@@ -133,9 +181,11 @@ def practice() -> None:
     if week is None:
         raise typer.Exit(code=1)
 
-    pending = [s for s in week.skills if s not in progress.completed_skills]
+    skills = state.get_skills(pack)
+    slot_skills = _skills_for_current_slot(week.skills, skills, progress.current_session)
+    pending = [s for s in slot_skills if s not in progress.completed_skills]
     if not pending:
-        console.print("[green]All skills complete for this week.[/green]")
+        console.print("[green]All skills complete for this week/session.[/green]")
         return
     console.print("[bold cyan]Pending skills:[/bold cyan]")
     for skill_name in pending:
@@ -271,15 +321,257 @@ def module_list() -> None:
     table.add_column("ID")
     table.add_column("Title")
     table.add_column("Weeks")
+    table.add_column("Source")
     table.add_column("Current")
     for module_id, pack in sorted(packs.items()):
+        registry_entry = state.registry.list().get(module_id)
+        source = "external" if registry_entry else "local/bundled"
         table.add_row(
             module_id,
             pack.title,
             str(len(pack.weeks)),
-            "yes" if module_id == progress.module_id else "",
+            source,
+            "yes" if module_id == progress.module_id else ""
         )
     console.print(table)
+
+
+@module_app.command("add")
+def module_add(git_url: str, ref: str = "main") -> None:
+    state = AppContext(Path.cwd())
+    console.print(f"[cyan]Adding module from[/cyan] {git_url} [bright_black](ref: {ref})[/bright_black]")
+    try:
+        entry = state.registry.add(git_url=git_url, ref=ref)
+    except Exception as exc:  # noqa: BLE001
+        console.print(f"[red]Failed to add module:[/red] {exc}")
+        raise typer.Exit(code=1)
+    console.print(f"[green]Module registered:[/green] {entry.id}")
+    console.print(f"[green]Local path:[/green] {entry.local_path}")
+    console.print(f"[green]Coursepack path:[/green] {entry.local_coursepack_path}")
+
+
+@module_app.command("update")
+def module_update(module_id: str | None = None, all_modules: bool = typer.Option(False, "--all")) -> None:
+    state = AppContext(Path.cwd())
+    try:
+        if all_modules:
+            updated = state.registry.update_all()
+            if not updated:
+                console.print("[yellow]No registered external modules to update.[/yellow]")
+                return
+            console.print("[green]Updated modules:[/green]")
+            for mid, entry in updated.items():
+                console.print(f"- {mid} @ {entry.resolved_commit}")
+            return
+        if not module_id:
+            console.print("[red]Provide module_id or use --all[/red]")
+            raise typer.Exit(code=2)
+        entry = state.registry.update(module_id)
+        console.print(f"[green]Updated {module_id}[/green] -> {entry.resolved_commit}")
+    except Exception as exc:  # noqa: BLE001
+        console.print(f"[red]Failed to update module:[/red] {exc}")
+        raise typer.Exit(code=1)
+
+
+@module_app.command("remove")
+def module_remove(module_id: str) -> None:
+    state = AppContext(Path.cwd())
+    try:
+        state.registry.remove(module_id)
+        console.print(f"[green]Removed module:[/green] {module_id}")
+    except Exception as exc:  # noqa: BLE001
+        console.print(f"[red]Failed to remove module:[/red] {exc}")
+        raise typer.Exit(code=1)
+
+
+@module_app.command("sync")
+def module_sync() -> None:
+    state = AppContext(Path.cwd())
+    result = state.registry.sync()
+    if not result:
+        console.print("[yellow]No registered external modules to sync.[/yellow]")
+        return
+    console.print("[green]Sync complete:[/green]")
+    for mid, commit in result.items():
+        console.print(f"- {mid}: {commit}")
+
+
+@module_app.command("doctor")
+def module_doctor(module_id: str) -> None:
+    state = AppContext(Path.cwd())
+    errors = state.registry.doctor(module_id)
+    if not errors:
+        console.print(f"[green]Module {module_id} looks healthy.[/green]")
+        return
+    console.print(f"[red]Module {module_id} issues:[/red]")
+    for err in errors:
+        console.print(f"- {err}")
+    raise typer.Exit(code=1)
+
+
+@module_app.command("validate")
+def module_validate(path: Path) -> None:
+    try:
+        manifest = validate_module_repo(path)
+    except Exception as exc:  # noqa: BLE001
+        console.print(f"[red]Module validation failed:[/red] {exc}")
+        raise typer.Exit(code=1)
+    console.print(f"[green]Module valid:[/green] {manifest.id} ({manifest.title})")
+
+
+@module_app.command("create-template")
+def module_create_template(
+    path: Path = typer.Argument(Path("opencourse-template")),
+    module_id: str = typer.Option("big-data-processing", "--module-id"),
+) -> None:
+    """
+    Create a reusable external module template repo skeleton with first 3 sessions.
+    """
+    repo_root = path
+    cp_root = repo_root / "coursepacks" / module_id
+    (cp_root / "weeks" / "week-01").mkdir(parents=True, exist_ok=True)
+    (cp_root / "skills").mkdir(parents=True, exist_ok=True)
+    (cp_root / "datasets").mkdir(parents=True, exist_ok=True)
+    (cp_root / "assessments").mkdir(parents=True, exist_ok=True)
+
+    (repo_root / "opencourse-module.yaml").write_text(
+        f"id: {module_id}\n"
+        f"title: {module_id.replace('-', ' ').title()} Module\n"
+        "version: 0.1.0\n"
+        "spec_version: \"1\"\n"
+        f"entry_coursepack: {module_id}\n"
+        "openclaw_compatible: true\n",
+        encoding="utf-8",
+    )
+    (cp_root / "course.yaml").write_text(
+        f"id: {module_id}\n"
+        f"title: {module_id.replace('-', ' ').title()}\n"
+        "description: External OpenCourse module template\n"
+        f"module: {module_id}\n"
+        "version: 0.1.0\n",
+        encoding="utf-8",
+    )
+    (cp_root / "weeks" / "week-01" / "week.yaml").write_text(
+        "week: 1\n"
+        "title: Sessionized Week 1\n"
+        "summary: Example with 3 sessions.\n"
+        "skills:\n"
+        "  - s1-quiz-intro\n"
+        "  - s1-lab-csv\n"
+        "  - s2-quiz-pandas\n"
+        "  - s2-lab-pandas\n"
+        "  - s3-lab-distributed\n"
+        "  - s3-review\n",
+        encoding="utf-8",
+    )
+    # Session 1
+    _write_template_skill(
+        cp_root,
+        "s1-quiz-intro",
+        "quiz",
+        1,
+        1,
+        "Session 1 intro quiz",
+        module=module_id,
+        extra_file=("quiz.yaml", "questions:\n  - question: What does CSV stand for?\n    options: [A, B, C]\n    answer: A\n"),
+    )
+    _write_template_skill(
+        cp_root,
+        "s1-lab-csv",
+        "guided-lab",
+        1,
+        1,
+        "Session 1 CSV lab",
+        module=module_id,
+    )
+    # Session 2
+    _write_template_skill(
+        cp_root,
+        "s2-quiz-pandas",
+        "quiz",
+        1,
+        2,
+        "Session 2 pandas quiz",
+        module=module_id,
+        extra_file=("quiz.yaml", "questions:\n  - question: Which API groups rows?\n    options: [groupby, merge]\n    answer: groupby\n"),
+    )
+    _write_template_skill(
+        cp_root,
+        "s2-lab-pandas",
+        "guided-lab",
+        1,
+        2,
+        "Session 2 pandas lab",
+        module=module_id,
+    )
+    # Session 3
+    _write_template_skill(
+        cp_root,
+        "s3-lab-distributed",
+        "guided-lab",
+        1,
+        3,
+        "Session 3 distributed lab",
+        module=module_id,
+    )
+    _write_template_skill(
+        cp_root,
+        "s3-review",
+        "review",
+        1,
+        3,
+        "Session 3 review",
+        module=module_id,
+    )
+    (repo_root / "README.md").write_text(
+        "# OpenCourse Module Template\n\n"
+        "This repo is ready to be registered by OpenCourse:\n\n"
+        "```bash\n"
+        f"opencourse module add https://github.com/steliosot/{repo_root.name}.git\n"
+        "```\n",
+        encoding="utf-8",
+    )
+    console.print(f"[green]Created module template at:[/green] {repo_root}")
+
+
+def _write_template_skill(
+    coursepack_root: Path,
+    name: str,
+    skill_type: str,
+    week: int,
+    session: int,
+    description: str,
+    module: str,
+    extra_file: tuple[str, str] | None = None,
+) -> None:
+    skill_dir = coursepack_root / "skills" / name
+    skill_dir.mkdir(parents=True, exist_ok=True)
+    (skill_dir / "SKILL.md").write_text(
+        "---\n"
+        f"name: {name}\n"
+        f"description: {description}\n"
+        "version: 0.1.0\n"
+        "tags: [template]\n"
+        f"module: {module}\n"
+        f"week: {week}\n"
+        f"session: {session}\n"
+        f"skill_type: {skill_type}\n"
+        "runtime: {}\n"
+        "---\n\n"
+        "# Skill\n\n"
+        "Replace this with your module-specific content.\n",
+        encoding="utf-8",
+    )
+    if skill_type == "guided-lab":
+        prompts_dir = skill_dir / "prompts"
+        prompts_dir.mkdir(parents=True, exist_ok=True)
+        (prompts_dir / "instructions.md").write_text(
+            f"# {description}\n\nAdd instructions for week {week}, session {session}.\n",
+            encoding="utf-8",
+        )
+    if extra_file:
+        filename, content = extra_file
+        (skill_dir / filename).write_text(content, encoding="utf-8")
 
 
 def _set_module(module_id: str) -> None:
@@ -295,6 +587,7 @@ def _set_module(module_id: str) -> None:
         raise typer.Exit(code=1)
     progress.module_id = module_id
     progress.current_week = 1
+    progress.current_session = 1
     progress.last_skill = None
     progress.completed_skills = {}
     state.progress_store.save(progress)
@@ -321,18 +614,72 @@ def module_current() -> None:
     )
 
 
+@session_app.command("list")
+def session_list() -> None:
+    state = AppContext(Path.cwd())
+    progress = state.progress_store.load()
+    pack = state.get_pack(progress.module_id)
+    skills = state.get_skills(pack)
+    week = next((w for w in pack.weeks if w.week == progress.current_week), None)
+    if not week:
+        console.print("[red]Current week not found[/red]")
+        raise typer.Exit(code=1)
+    sessions = sorted({(skills[name].metadata.session or 1) for name in week.skills if name in skills}) or [1]
+    table = Table(title=f"Sessions for Week {progress.current_week}", border_style="cyan")
+    table.add_column("Session")
+    table.add_column("Skills")
+    table.add_column("Current")
+    for session in sessions:
+        count = sum(1 for name in week.skills if name in skills and (skills[name].metadata.session or 1) == session)
+        table.add_row(str(session), str(count), "yes" if session == progress.current_session else "")
+    console.print(table)
+
+
+def _set_session(number: int) -> None:
+    state = AppContext(Path.cwd())
+    progress = state.progress_store.load()
+    if number < 1:
+        console.print("[red]Session must be >= 1[/red]")
+        raise typer.Exit(code=1)
+    progress.current_session = number
+    state.progress_store.save(progress)
+    console.print(f"[green]Current session set to {number}[/green]")
+
+
+@session_app.command("set")
+def session_set(number: int) -> None:
+    _set_session(number)
+
+
+@session_app.command("current")
+def session_current() -> None:
+    state = AppContext(Path.cwd())
+    progress = state.progress_store.load()
+    console.print(f"[cyan]Current session:[/cyan] {progress.current_session}")
+
+
 @set_app.callback()
 def set_callback(
-    module_or_id: str | None = typer.Argument(default=None),
-    module_id: str | None = typer.Argument(default=None),
+    target: str | None = typer.Argument(default=None),
+    value: str | None = typer.Argument(default=None),
 ) -> None:
-    if module_or_id and module_or_id != "module":
-        _set_module(module_or_id)
+    if target and target not in {"module", "week", "session"}:
+        _set_module(target)
         return
-    if module_or_id == "module" and module_id:
-        _set_module(module_id)
+    if target == "module" and value:
+        _set_module(value)
         return
-    console.print("[red]Usage:[/red] opencourse set <module-id> or opencourse set module <module-id>")
+    if target == "week" and value and value.isdigit():
+        week_start(int(value))
+        return
+    if target == "session" and value and value.isdigit():
+        _set_session(int(value))
+        return
+    console.print(
+        "[red]Usage:[/red] "
+        "opencourse set <module-id> | opencourse set module <module-id> | "
+        "opencourse set week <n> | opencourse set session <n>"
+    )
     raise typer.Exit(code=2)
 
 
@@ -382,6 +729,7 @@ def skills_show(name: str) -> None:
             f"Type: {skill.metadata.skill_type}\n"
             f"Module: {skill.metadata.module}\n"
             f"Week: {skill.metadata.week}\n"
+            f"Session: {skill.metadata.session}\n"
             f"Version: {skill.metadata.version}\n"
             f"Source: {skill.source}\n"
             f"Path: {skill.path}",
@@ -421,17 +769,28 @@ def week_list() -> None:
     state = AppContext(Path.cwd())
     progress = state.progress_store.load()
     pack = state.get_pack(progress.module_id)
+    skills = state.get_skills(pack)
 
     table = Table(title="Course Weeks", border_style="cyan")
     table.add_column("Week")
     table.add_column("Title")
+    table.add_column("Sessions")
     table.add_column("Skills")
     table.add_column("Current")
 
     for week in pack.weeks:
+        sessions = sorted(
+            {
+                (skills[name].metadata.session or 1)
+                for name in week.skills
+                if name in skills
+            }
+        )
+        session_label = ", ".join(str(s) for s in sessions) if sessions else "1"
         table.add_row(
             str(week.week),
             week.title,
+            session_label,
             str(len(week.skills)),
             "yes" if week.week == progress.current_week else "",
         )
@@ -457,8 +816,9 @@ def week_start(number: int) -> None:
     state = AppContext(Path.cwd())
     progress = state.progress_store.load()
     progress.current_week = number
+    progress.current_session = 1
     state.progress_store.save(progress)
-    console.print(f"[green]Current week set to {number}[/green]")
+    console.print(f"[green]Current week set to {number} (session reset to 1)[/green]")
 
 
 @app.command("week")
@@ -506,28 +866,26 @@ def continue_learning() -> None:
     pack = state.get_pack(progress.module_id)
     skills = state.get_skills(pack)
 
-    if progress.last_skill and progress.last_skill in skills:
-        skill = skills[progress.last_skill]
-        console.print(f"Continuing with last skill: [cyan]{progress.last_skill}[/cyan]")
-        state.engine.run_skill(skill, pack, progress)
-        state.progress_store.save(progress)
-        return
-
     week = next((w for w in pack.weeks if w.week == progress.current_week), None)
     if not week:
         raise typer.Exit(code=1)
-    pending = [s for s in week.skills if s not in progress.completed_skills and s in skills]
+    slot_skills = _skills_for_current_slot(week.skills, skills, progress.current_session)
+    pending = [s for s in slot_skills if s not in progress.completed_skills and s in skills]
     if not pending:
         console.print("[green]Nothing pending. Try `opencourse week start <n>`[/green]")
         return
 
-    skill = skills[pending[0]]
-    console.print(f"Launching next pending skill: [cyan]{skill.metadata.name}[/cyan]")
+    if progress.last_skill and progress.last_skill in pending:
+        skill = skills[progress.last_skill]
+        console.print(f"Continuing with pending skill: [cyan]{progress.last_skill}[/cyan]")
+    else:
+        skill = skills[pending[0]]
+        console.print(f"Launching next pending skill: [cyan]{skill.metadata.name}[/cyan]")
     state.engine.run_skill(skill, pack, progress)
     state.progress_store.save(progress)
 
 
-def _launch_skill(name: str, expected_type: str | None = None) -> None:
+def _launch_skill(name: str, expected_type: str | None = None, *, show_solution: bool = False) -> None:
     state = AppContext(Path.cwd())
     progress = state.progress_store.load()
     pack = state.get_pack(progress.module_id)
@@ -541,13 +899,20 @@ def _launch_skill(name: str, expected_type: str | None = None) -> None:
             f"[red]Skill '{name}' is type '{skill.metadata.skill_type}', expected '{expected_type}'.[/red]"
         )
         raise typer.Exit(code=1)
-    state.engine.run_skill(skill, pack, progress)
+    state.engine.run_skill(skill, pack, progress, show_solution=show_solution)
     state.progress_store.save(progress)
 
 
 @app.command()
-def lab(name: str) -> None:
-    _launch_skill(name, expected_type="guided-lab")
+def lab(
+    name: str,
+    solution: bool = typer.Option(
+        False,
+        "--solution",
+        help="Show reference solution (if available) before running lab checks.",
+    ),
+) -> None:
+    _launch_skill(name, expected_type="guided-lab", show_solution=solution)
 
 
 @app.command()
@@ -565,8 +930,13 @@ def explain_error(name: str) -> None:
     _launch_skill(name, expected_type="explain-error")
 
 
+@app.command("run")
+def run_any_skill(name: str) -> None:
+    _launch_skill(name)
+
+
 @app.command()
-def ask(question: str | None = None) -> None:
+def ask(question: str | None = typer.Argument(default=None)) -> None:
     state = AppContext(Path.cwd())
     q = question or Prompt.ask("Ask OpenCourse")
     answer = state.engine.ask_ai(q)
@@ -578,23 +948,36 @@ def progress() -> None:
     state = AppContext(Path.cwd())
     p = state.progress_store.load()
     pack = state.get_pack(p.module_id)
+    skills = state.get_skills(pack)
 
     table = Table(title="Progress", border_style="cyan")
     table.add_column("Field")
     table.add_column("Value")
     table.add_row("Module", p.module_id)
     table.add_row("Current week", str(p.current_week))
+    table.add_row("Current session", str(p.current_session))
     table.add_row("Completed skills", str(len(p.completed_skills)))
     table.add_row("Last skill", p.last_skill or "-")
     console.print(table)
 
     week = next((w for w in pack.weeks if w.week == p.current_week), None)
     if week:
-        remaining = [s for s in week.skills if s not in p.completed_skills]
+        slot_skills = _skills_for_current_slot(week.skills, skills, p.current_session)
+        remaining = [s for s in slot_skills if s not in p.completed_skills]
         if remaining:
-            console.print("[bold cyan]Remaining this week:[/bold cyan]")
+            console.print("[bold cyan]Remaining this week/session:[/bold cyan]")
             for s in remaining:
                 console.print(f"- {s}")
+
+    weekly = Table(title="Weekly Completion", border_style="cyan")
+    weekly.add_column("Week")
+    weekly.add_column("Completed")
+    weekly.add_column("Total")
+    for week_entry in pack.weeks:
+        total = len([name for name in week_entry.skills if name in skills])
+        done = len([name for name in week_entry.skills if name in p.completed_skills])
+        weekly.add_row(str(week_entry.week), str(done), str(total))
+    console.print(weekly)
 
 
 @app.command()
@@ -622,6 +1005,7 @@ def init_skill(path: Path = Path("skills/new-skill"), skill_type: str = "guided-
         "tags: [teaching]\n"
         "module: big-data-processing\n"
         "week: 1\n"
+        "session: 1\n"
         f"skill_type: {skill_type}\n"
         "runtime: {}\n"
         "---\n\n"

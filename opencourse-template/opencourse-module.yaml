@@ -1,0 +1,6 @@
+id: big-data-processing
+title: Big Data Processing Module
+version: 0.1.0
+spec_version: "1"
+entry_coursepack: big-data-processing
+openclaw_compatible: true

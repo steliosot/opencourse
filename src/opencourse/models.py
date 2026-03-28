@@ -14,6 +14,7 @@ class SkillMetadata(BaseModel):
     tags: list[str] = Field(default_factory=list)
     module: str = "general"
     week: int | None = None
+    session: int | None = 1
     skill_type: str = "guided-lab"
     runtime: dict[str, Any] = Field(default_factory=dict)
 
@@ -45,6 +46,7 @@ class CoursePack(BaseModel):
 class ProgressState(BaseModel):
     module_id: str = "big-data-processing"
     current_week: int = 1
+    current_session: int = 1
     completed_skills: dict[str, datetime] = Field(default_factory=dict)
     last_skill: str | None = None
 

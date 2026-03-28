@@ -4,6 +4,7 @@ from pathlib import Path
 
 import yaml
 
+from ..module_registry import ModuleRegistry
 from ..models import CoursePack, WeekEntry
 
 
@@ -11,10 +12,33 @@ class CoursePackLoader:
     def __init__(self, workspace: Path) -> None:
         self.workspace = workspace
         self.bundled_root = Path(__file__).resolve().parent.parent / "bundled" / "coursepacks"
+        self.registry = ModuleRegistry()
 
     def discover(self) -> dict[str, CoursePack]:
         packs: dict[str, CoursePack] = {}
-        roots = [self.workspace / "coursepacks", self.bundled_root]
+        roots = [self.workspace / "coursepacks"]
+        for root in roots:
+            if not root.exists():
+                continue
+            for pack_dir in sorted(root.iterdir()):
+                if not pack_dir.is_dir():
+                    continue
+                course_file = pack_dir / "course.yaml"
+                if not course_file.exists():
+                    continue
+                pack = self._load_pack(pack_dir)
+                if pack.id not in packs:
+                    packs[pack.id] = pack
+        # External modules are loaded before bundled packs so they can override bundled defaults.
+        for _module_id, entry in self.registry.list().items():
+            pack_dir = Path(entry.local_coursepack_path)
+            course_file = pack_dir / "course.yaml"
+            if not pack_dir.exists() or not course_file.exists():
+                continue
+            pack = self._load_pack(pack_dir)
+            if pack.id not in packs:
+                packs[pack.id] = pack
+        roots = [self.bundled_root]
         for root in roots:
             if not root.exists():
                 continue

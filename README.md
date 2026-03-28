@@ -60,6 +60,30 @@ opencourse progress
 opencourse update
 ```
 
+## External Modules (GitHub)
+
+OpenCourse can load teaching modules from external Git repositories.
+
+```bash
+opencourse module add https://github.com/warestack/bda
+opencourse module list
+opencourse set module big-data-processing
+opencourse set week 1
+opencourse set session 1
+opencourse learn
+```
+
+Module lifecycle commands:
+
+- `opencourse module add <git-url> [--ref main|tag|sha]`
+- `opencourse module update <module-id>`
+- `opencourse module update --all`
+- `opencourse module remove <module-id>`
+- `opencourse module sync`
+- `opencourse module doctor <module-id>`
+- `opencourse module validate <path>`
+- `opencourse module create-template [path]`
+
 ## Command Surface
 
 - `opencourse`
@@ -250,3 +274,4 @@ examples/
 ## Compatibility Notes
 
 See [docs/compatibility.md](docs/compatibility.md).
+See [docs/module-spec.md](docs/module-spec.md) for external module format.

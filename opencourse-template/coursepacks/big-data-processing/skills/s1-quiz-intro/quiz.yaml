@@ -1,0 +1,4 @@
+questions:
+  - question: Which format is plain-text tabular data?
+    options: [JSON, CSV, XML]
+    answer: CSV
