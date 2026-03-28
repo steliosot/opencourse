@@ -3,6 +3,8 @@ from __future__ import annotations
 import csv
 import subprocess
 import sys
+from datetime import datetime
+from pathlib import Path
 
 import yaml
 from rich.console import Console
@@ -54,6 +56,7 @@ class RuntimeEngine:
         questions = quiz.get("questions", [])
         score = 0
         total = len(questions)
+        attempts: list[dict[str, str | int | bool]] = []
 
         self.console.print(Panel.fit(f"Quiz: {skill.metadata.name}", border_style="cyan"))
         for idx, q in enumerate(questions, start=1):
@@ -63,13 +66,48 @@ class RuntimeEngine:
                 self.console.print(f"  {opt_idx}. {opt}")
             answer = Prompt.ask("Your answer").strip()
             correct = str(q.get("answer", "")).strip()
-            if answer.lower() == correct.lower():
+            selected_value = answer
+            if answer.isdigit():
+                selected_index = int(answer) - 1
+                if 0 <= selected_index < len(options):
+                    selected_value = str(options[selected_index]).strip()
+            is_correct = selected_value.lower() == correct.lower()
+            if is_correct:
                 self.console.print("[green]Correct[/green]")
                 score += 1
             else:
                 self.console.print(f"[yellow]Not quite. Correct answer:[/yellow] {correct}")
+            attempts.append(
+                {
+                    "question_number": idx,
+                    "question": q["question"],
+                    "answer_raw": answer,
+                    "answer_resolved": selected_value,
+                    "correct_answer": correct,
+                    "is_correct": is_correct,
+                }
+            )
 
         self.console.print(f"\n[bold cyan]Score:[/bold cyan] {score}/{total}")
+        should_save = Prompt.ask(
+            "Would you like to save your quiz answers and results to a file? (y/n)",
+            default="n",
+        ).strip().lower()
+        if should_save in {"y", "yes"}:
+            output_dir = Path.cwd() / "quiz-results"
+            output_dir.mkdir(parents=True, exist_ok=True)
+            filename = f"{skill.metadata.name}-{datetime.now().strftime('%Y%m%d-%H%M%S')}.yaml"
+            output_path = output_dir / filename
+            payload = {
+                "quiz": skill.metadata.name,
+                "module": skill.metadata.module,
+                "week": skill.metadata.week,
+                "score": {"correct": score, "total": total},
+                "saved_at": datetime.now().isoformat(timespec="seconds"),
+                "attempts": attempts,
+            }
+            output_path.write_text(yaml.safe_dump(payload, sort_keys=False), encoding="utf-8")
+            self.console.print(f"[green]Saved quiz results:[/green] {output_path}")
         if score == total:
             progress.mark_complete(skill.metadata.name)
             return True
