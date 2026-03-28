@@ -28,5 +28,4 @@ def banner_panel() -> Panel:
     subtitle = Text("Terminal-First University Learning", style="cyan")
     body = Text(LOGO, style="bold bright_cyan")
     body.append(ARISTOTLE_ICON, style="bright_magenta")
-    body.append("\nScholar Engine Online", style="bright_black")
     return Panel(body, title=title, subtitle=subtitle, border_style="cyan", padding=(1, 2))
