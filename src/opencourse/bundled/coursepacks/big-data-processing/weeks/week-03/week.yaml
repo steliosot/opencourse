@@ -1,0 +1,6 @@
+week: 3
+title: Distributed Processing Concepts
+summary: Understand partitioning, map/reduce, and fault tolerance.
+skills:
+  - lab-distributed-concepts
+  - review-week3

@@ -1,0 +1,10 @@
+week: 1
+title: Python Data Foundations
+summary: CSV handling, data quality basics, and intro checks.
+skills:
+  - quiz-intro-data
+  - lab-csv-basics
+  - dataset-sales-overview
+  - hint-week1
+  - test-task1
+  - review-week1

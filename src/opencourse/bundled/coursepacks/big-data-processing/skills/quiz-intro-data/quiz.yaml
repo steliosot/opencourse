@@ -1,0 +1,7 @@
+questions:
+  - question: Which format is row-and-column plain text data?
+    options: [JSON, CSV, Parquet, XML]
+    answer: CSV
+  - question: What is the main value of deterministic tests in education?
+    options: [Style points, Repeatable verification, Better banners, Faster typing]
+    answer: Repeatable verification

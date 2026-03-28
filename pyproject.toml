@@ -1,0 +1,42 @@
+[build-system]
+requires = ["hatchling>=1.24.0"]
+build-backend = "hatchling.build"
+
+[project]
+name = "opencourse"
+version = "0.1.0"
+description = "OpenCourse: OpenClaw-inspired CLI learning platform for university teaching"
+readme = "README.md"
+requires-python = ">=3.10"
+license = "MIT"
+authors = [{ name = "OpenCourse Contributors" }]
+dependencies = [
+  "typer>=0.12.3",
+  "rich>=13.7.1",
+  "pydantic>=2.8.2",
+  "PyYAML>=6.0.2",
+  "pytest>=8.2.0",
+]
+
+[project.optional-dependencies]
+data = ["pandas>=2.2.2"]
+
+[project.scripts]
+opencourse = "opencourse.main:run"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/opencourse"]
+
+[tool.hatch.build]
+include = [
+  "src/opencourse/bundled/**/*.md",
+  "src/opencourse/bundled/**/*.yaml",
+  "src/opencourse/bundled/**/*.yml",
+  "src/opencourse/bundled/**/*.json",
+  "src/opencourse/bundled/**/*.csv",
+  "src/opencourse/bundled/**/*.py",
+]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]

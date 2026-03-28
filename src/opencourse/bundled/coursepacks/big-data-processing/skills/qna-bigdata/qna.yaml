@@ -1,0 +1,5 @@
+entries:
+  - q: Why do we partition data?
+    a: Partitioning lets multiple workers process subsets in parallel and minimizes bottlenecks.
+  - q: What is fault tolerance in distributed systems?
+    a: The system continues work despite node failure by using replication, retries, and checkpointing.

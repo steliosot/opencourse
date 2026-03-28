@@ -1,0 +1,9 @@
+order_id,region,product,units,unit_price
+1001,North,Keyboard,10,49.99
+1002,South,Mouse,25,19.50
+1003,East,Monitor,5,199.99
+1004,West,Laptop,2,999.00
+1005,North,Mouse,18,19.50
+1006,South,Keyboard,7,49.99
+1007,East,Laptop,1,1099.00
+1008,West,Monitor,4,189.99

@@ -1,0 +1,6 @@
+ts,user_id,event,latency_ms
+2026-01-01T10:00:00Z,u1,view,120
+2026-01-01T10:00:01Z,u2,click,80
+2026-01-01T10:00:03Z,u1,purchase,450
+2026-01-01T10:00:04Z,u3,view,95
+2026-01-01T10:00:07Z,u4,click,75

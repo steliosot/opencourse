@@ -1,0 +1,8 @@
+week: 2
+title: pandas Filtering and Aggregation
+summary: Build grouped insights using pandas-like workflows.
+skills:
+  - quiz-pandas-core
+  - lab-pandas-aggregation
+  - test-task2
+  - qna-bigdata

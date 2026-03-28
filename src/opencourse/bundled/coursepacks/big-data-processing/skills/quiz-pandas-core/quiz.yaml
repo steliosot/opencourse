@@ -1,0 +1,7 @@
+questions:
+  - question: Which operation groups rows by one or more keys?
+    options: [merge, sort_values, groupby, reset_index]
+    answer: groupby
+  - question: Which operation filters rows by condition?
+    options: [Boolean mask, join, concat, rename]
+    answer: Boolean mask

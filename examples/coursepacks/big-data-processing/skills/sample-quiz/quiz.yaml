@@ -1,0 +1,4 @@
+questions:
+  - question: Example question?
+    options: [A, B, C]
+    answer: A
