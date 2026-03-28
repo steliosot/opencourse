@@ -20,8 +20,12 @@ console = Console()
 app = typer.Typer(help="OpenCourse CLI", add_completion=False, rich_markup_mode="rich")
 skills_app = typer.Typer(help="Skill management commands")
 ai_app = typer.Typer(help="AI management commands")
+module_app = typer.Typer(help="Module management commands")
+set_app = typer.Typer(help="Setters for OpenCourse session defaults")
 app.add_typer(skills_app, name="skills")
 app.add_typer(ai_app, name="ai")
+app.add_typer(module_app, name="module")
+app.add_typer(set_app, name="set")
 
 
 class AppContext:
@@ -38,6 +42,9 @@ class AppContext:
             raise typer.BadParameter(f"Module '{module_id}' not found. Available: {', '.join(packs.keys())}")
         return packs[module_id]
 
+    def list_packs(self) -> dict[str, CoursePack]:
+        return self.coursepacks.discover()
+
     def get_skills(self, pack: CoursePack) -> dict[str, Skill]:
         loader = SkillLoader(self.workspace)
         return loader.load_skills(include_coursepack=pack.path)
@@ -50,13 +57,37 @@ def root(ctx: typer.Context) -> None:
 
     state = AppContext(Path.cwd())
     progress = state.progress_store.load()
-    pack = state.get_pack(progress.module_id)
+    packs = state.list_packs()
+    if not packs:
+        console.print("[red]No course modules found. Add a coursepack first.[/red]")
+        raise typer.Exit(code=1)
+    if progress.module_id not in packs:
+        progress.module_id = sorted(packs.keys())[0]
+        progress.current_week = 1
+        progress.last_skill = None
+        progress.completed_skills = {}
+        state.progress_store.save(progress)
+    pack = packs[progress.module_id]
 
     console.print(banner_panel())
+    table = Table(title="Available Modules", border_style="cyan")
+    table.add_column("ID")
+    table.add_column("Title")
+    table.add_column("Weeks")
+    table.add_column("Current")
+    for module_id, module_pack in sorted(packs.items()):
+        table.add_row(
+            module_id,
+            module_pack.title,
+            str(len(module_pack.weeks)),
+            "yes" if module_id == progress.module_id else "",
+        )
+    console.print(table)
     console.print(
         Panel(
             f"Current module: [cyan]{pack.title}[/cyan]\n"
             f"Current week: [bold]{progress.current_week}[/bold]\n"
+            "Use [bold]opencourse set module <id>[/bold] to switch modules.\n"
             "Use [bold]opencourse learn[/bold] to continue.",
             border_style="cyan",
             title="Session",
@@ -113,9 +144,10 @@ def practice() -> None:
 
 @app.command()
 def validate() -> None:
-    """Validate the default bundled Big Data Processing coursepack."""
+    """Validate the currently selected coursepack."""
     state = AppContext(Path.cwd())
-    pack = state.get_pack()
+    progress = state.progress_store.load()
+    pack = state.get_pack(progress.module_id)
     valid, errors = validate_coursepack(pack.path)
     if valid:
         console.print("[green]Coursepack is valid.[/green]")
@@ -230,11 +262,76 @@ def ai_use(model: str) -> None:
     console.print(f"[green]AI model set to {model}[/green] ({path})")
 
 
+@module_app.command("list")
+def module_list() -> None:
+    state = AppContext(Path.cwd())
+    progress = state.progress_store.load()
+    packs = state.list_packs()
+    table = Table(title="Modules", border_style="cyan")
+    table.add_column("ID")
+    table.add_column("Title")
+    table.add_column("Weeks")
+    table.add_column("Current")
+    for module_id, pack in sorted(packs.items()):
+        table.add_row(
+            module_id,
+            pack.title,
+            str(len(pack.weeks)),
+            "yes" if module_id == progress.module_id else "",
+        )
+    console.print(table)
+
+
+def _set_module(module_id: str) -> None:
+    state = AppContext(Path.cwd())
+    progress = state.progress_store.load()
+    packs = state.list_packs()
+    if module_id not in packs:
+        console.print(f"[red]Unknown module:[/red] {module_id}")
+        if packs:
+            console.print("Available modules:")
+            for key in sorted(packs.keys()):
+                console.print(f"- {key}")
+        raise typer.Exit(code=1)
+    progress.module_id = module_id
+    progress.current_week = 1
+    progress.last_skill = None
+    progress.completed_skills = {}
+    state.progress_store.save(progress)
+    console.print(f"[green]Module set to {module_id}[/green]")
+    console.print("Run [bold]opencourse learn[/bold] to start.")
+
+
+@module_app.command("set")
+def module_set(module_id: str) -> None:
+    _set_module(module_id)
+
+
+@module_app.command("current")
+def module_current() -> None:
+    state = AppContext(Path.cwd())
+    progress = state.progress_store.load()
+    pack = state.get_pack(progress.module_id)
+    console.print(
+        Panel(
+            f"ID: {pack.id}\nTitle: {pack.title}\nCurrent week: {progress.current_week}",
+            title="Current Module",
+            border_style="cyan",
+        )
+    )
+
+
+@set_app.command("module")
+def set_module_alias(module_id: str) -> None:
+    _set_module(module_id)
+
+
 @skills_app.command("list")
 def skills_list() -> None:
     """List all discovered skills with source precedence."""
     state = AppContext(Path.cwd())
-    pack = state.get_pack()
+    progress = state.progress_store.load()
+    pack = state.get_pack(progress.module_id)
     skills = state.get_skills(pack)
 
     table = Table(title="Available Skills", border_style="cyan")
@@ -260,7 +357,8 @@ def skills_list() -> None:
 def skills_show(name: str) -> None:
     """Show metadata and details for one skill."""
     state = AppContext(Path.cwd())
-    pack = state.get_pack()
+    progress = state.progress_store.load()
+    pack = state.get_pack(progress.module_id)
     skills = state.get_skills(pack)
     skill = skills.get(name)
     if not skill:
@@ -332,7 +430,8 @@ def week_list() -> None:
 
 def week_open(number: int) -> None:
     state = AppContext(Path.cwd())
-    pack = state.get_pack()
+    progress = state.progress_store.load()
+    pack = state.get_pack(progress.module_id)
     week = next((w for w in pack.weeks if w.week == number), None)
     if not week:
         console.print(f"[red]Week {number} not found[/red]")

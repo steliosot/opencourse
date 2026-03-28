@@ -47,6 +47,8 @@ python3 -m pip install -e .
 
 ```bash
 opencourse
+opencourse module list
+opencourse set module big-data-processing
 opencourse learn
 opencourse skills list
 opencourse week 1
@@ -62,6 +64,10 @@ opencourse update
 
 - `opencourse`
 - `opencourse learn`
+- `opencourse module list`
+- `opencourse module current`
+- `opencourse module set <id>`
+- `opencourse set module <id>`
 - `opencourse practice`
 - `opencourse validate`
 - `opencourse skills list`
