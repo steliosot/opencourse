@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "opencourse"
-version = "0.1.0"
+version = "0.1.1"
 description = "OpenCourse: OpenClaw-inspired CLI learning platform for university teaching"
 readme = "README.md"
 requires-python = ">=3.10"
