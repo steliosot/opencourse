@@ -1,4 +1,0 @@
-questions:
-  - question: Which API groups rows in pandas?
-    options: [groupby, merge]
-    answer: groupby

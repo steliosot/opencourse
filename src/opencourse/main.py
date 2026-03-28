@@ -425,7 +425,7 @@ def module_create_template(
     module_id: str = typer.Option("big-data-processing", "--module-id"),
 ) -> None:
     """
-    Create a reusable external module template repo skeleton with first 3 sessions.
+    Create a reusable external module template repo skeleton (empty starter).
     """
     repo_root = path
     cp_root = repo_root / "coursepacks" / module_id
@@ -453,125 +453,25 @@ def module_create_template(
     )
     (cp_root / "weeks" / "week-01" / "week.yaml").write_text(
         "week: 1\n"
-        "title: Sessionized Week 1\n"
-        "summary: Example with 3 sessions.\n"
-        "skills:\n"
-        "  - s1-quiz-intro\n"
-        "  - s1-lab-csv\n"
-        "  - s2-quiz-pandas\n"
-        "  - s2-lab-pandas\n"
-        "  - s3-lab-distributed\n"
-        "  - s3-review\n",
+        "title: Week 1\n"
+        "summary: Add your first week description.\n"
+        "skills: []\n",
         encoding="utf-8",
     )
-    # Session 1
-    _write_template_skill(
-        cp_root,
-        "s1-quiz-intro",
-        "quiz",
-        1,
-        1,
-        "Session 1 intro quiz",
-        module=module_id,
-        extra_file=("quiz.yaml", "questions:\n  - question: What does CSV stand for?\n    options: [A, B, C]\n    answer: A\n"),
-    )
-    _write_template_skill(
-        cp_root,
-        "s1-lab-csv",
-        "guided-lab",
-        1,
-        1,
-        "Session 1 CSV lab",
-        module=module_id,
-    )
-    # Session 2
-    _write_template_skill(
-        cp_root,
-        "s2-quiz-pandas",
-        "quiz",
-        1,
-        2,
-        "Session 2 pandas quiz",
-        module=module_id,
-        extra_file=("quiz.yaml", "questions:\n  - question: Which API groups rows?\n    options: [groupby, merge]\n    answer: groupby\n"),
-    )
-    _write_template_skill(
-        cp_root,
-        "s2-lab-pandas",
-        "guided-lab",
-        1,
-        2,
-        "Session 2 pandas lab",
-        module=module_id,
-    )
-    # Session 3
-    _write_template_skill(
-        cp_root,
-        "s3-lab-distributed",
-        "guided-lab",
-        1,
-        3,
-        "Session 3 distributed lab",
-        module=module_id,
-    )
-    _write_template_skill(
-        cp_root,
-        "s3-review",
-        "review",
-        1,
-        3,
-        "Session 3 review",
-        module=module_id,
-    )
+    (cp_root / "skills" / ".gitkeep").write_text("", encoding="utf-8")
+    (cp_root / "datasets" / ".gitkeep").write_text("", encoding="utf-8")
+    (cp_root / "assessments" / ".gitkeep").write_text("", encoding="utf-8")
     (repo_root / "README.md").write_text(
         "# OpenCourse Module Template\n\n"
-        "This repo is ready to be registered by OpenCourse:\n\n"
+        "This repo is an empty starter template for external OpenCourse modules.\n\n"
+        "Add your own week/session skills under `coursepacks/<module-id>/skills`.\n\n"
+        "Then register it in OpenCourse:\n\n"
         "```bash\n"
         f"opencourse module add https://github.com/steliosot/{repo_root.name}.git\n"
         "```\n",
         encoding="utf-8",
     )
     console.print(f"[green]Created module template at:[/green] {repo_root}")
-
-
-def _write_template_skill(
-    coursepack_root: Path,
-    name: str,
-    skill_type: str,
-    week: int,
-    session: int,
-    description: str,
-    module: str,
-    extra_file: tuple[str, str] | None = None,
-) -> None:
-    skill_dir = coursepack_root / "skills" / name
-    skill_dir.mkdir(parents=True, exist_ok=True)
-    (skill_dir / "SKILL.md").write_text(
-        "---\n"
-        f"name: {name}\n"
-        f"description: {description}\n"
-        "version: 0.1.0\n"
-        "tags: [template]\n"
-        f"module: {module}\n"
-        f"week: {week}\n"
-        f"session: {session}\n"
-        f"skill_type: {skill_type}\n"
-        "runtime: {}\n"
-        "---\n\n"
-        "# Skill\n\n"
-        "Replace this with your module-specific content.\n",
-        encoding="utf-8",
-    )
-    if skill_type == "guided-lab":
-        prompts_dir = skill_dir / "prompts"
-        prompts_dir.mkdir(parents=True, exist_ok=True)
-        (prompts_dir / "instructions.md").write_text(
-            f"# {description}\n\nAdd instructions for week {week}, session {session}.\n",
-            encoding="utf-8",
-        )
-    if extra_file:
-        filename, content = extra_file
-        (skill_dir / filename).write_text(content, encoding="utf-8")
 
 
 def _set_module(module_id: str) -> None:
@@ -1030,8 +930,7 @@ def init_week(number: int, coursepack_path: Path = Path("coursepacks/big-data-pr
         "week: {0}\n"
         "title: Week {0}\n"
         "summary: Add learning goals for this week.\n"
-        "skills:\n"
-        "  - example-skill\n".format(number),
+        "skills: []\n".format(number),
         encoding="utf-8",
     )
     console.print(f"[green]Created week scaffold:[/green] {week_file}")
@@ -1055,11 +954,13 @@ def init_coursepack(path: Path = Path("coursepacks/new-course")) -> None:
     (path / "weeks" / "week-01" / "week.yaml").write_text(
         "week: 1\n"
         "title: Week 1\n"
-        "summary: Getting started\n"
-        "skills:\n"
-        "  - intro-quiz\n",
+        "summary: Add your first week description.\n"
+        "skills: []\n",
         encoding="utf-8",
     )
+    (path / "skills" / ".gitkeep").write_text("", encoding="utf-8")
+    (path / "datasets" / ".gitkeep").write_text("", encoding="utf-8")
+    (path / "assessments" / ".gitkeep").write_text("", encoding="utf-8")
     console.print(f"[green]Created coursepack scaffold:[/green] {path}")
 
 
